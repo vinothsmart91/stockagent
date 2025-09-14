@@ -1,10 +1,11 @@
 from flask import Flask, request, jsonify
 from kiteconnect import KiteConnect
 import os
+import math
 
 app = Flask(__name__)
 
-# Credentials from environment (Render will provide)
+# Credentials from environment
 API_KEY = os.environ.get("KITE_API_KEY")
 API_SECRET = os.environ.get("KITE_API_SECRET")
 ACCESS_TOKEN = os.environ.get("KITE_ACCESS_TOKEN")
@@ -15,41 +16,42 @@ kite.set_access_token(ACCESS_TOKEN)
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json(force=True)
-    symbol = data.get("symbol")
-    action = data.get("action")
 
-    if not symbol or not action:
-        return jsonify({"error": "Invalid payload"}), 400
+    # Parse stocks and trigger_prices as lists
+    stocks_str = data.get("stocks", "")
+    prices_str = data.get("trigger_prices", "")
+    symbols = [s.strip() for s in stocks_str.split(",") if s.strip()]
+    trigger_prices = [float(p.strip()) for p in prices_str.split(",") if p.strip()]
 
-    try:
-        if action.upper() == "BUY":
+    if not symbols:
+        return jsonify({"error": "No stocks found in payload"}), 400
+
+    # Default action (since Chartink doesn't send it)
+    action = "BUY"
+    results = []
+
+    for symbol in symbols:
+        try:
+            ltp_data = kite.ltp(f"NSE:{symbol}")
+            price = ltp_data[f"NSE:{symbol}"]["last_price"]
+            quantity = max(1, math.floor(10000 / price))
             order = kite.place_order(
                 tradingsymbol=symbol,
                 exchange="NSE",
-                transaction_type="BUY",
-                quantity=1,
+                transaction_type=action,
+                quantity=quantity,
                 order_type="MARKET",
                 product="CNC"
             )
-            return jsonify({"status": "BUY placed", "order_id": order})
-        elif action.upper() == "SELL":
-            order = kite.place_order(
-                tradingsymbol=symbol,
-                exchange="NSE",
-                transaction_type="SELL",
-                quantity=1,
-                order_type="MARKET",
-                product="CNC"
-            )
-            return jsonify({"status": "SELL placed", "order_id": order})
-        else:
-            return jsonify({"error": "Unknown action"}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+            results.append({"symbol": symbol, "status": f"{action} placed", "order_id": order, "quantity": quantity})
+        except Exception as e:
+            results.append({"symbol": symbol, "error": str(e)})
+
+    return jsonify(results)
 
 @app.route("/")
 def home():
-    return "Stock Agent Running!"
+    return "Stock Agent Running with Multi-Stock Support!"
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

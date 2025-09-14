@@ -5,9 +5,9 @@ import os
 app = Flask(__name__)
 
 # Credentials from environment (Render will provide)
-API_KEY = "61x6yt5iy11za4qp"
-API_SECRET = "tcfe298y7p37eyw6ytl86dji58j1v1oa"
-ACCESS_TOKEN = "HTZhVtZ0MaF4bQeNWrU5Kb089pIWRDUq"
+API_KEY = os.environ.get("KITE_API_KEY")
+API_SECRET = os.environ.get("KITE_API_SECRET")
+ACCESS_TOKEN = os.environ.get("KITE_ACCESS_TOKEN")
 
 kite = KiteConnect(api_key=API_KEY)
 kite.set_access_token(ACCESS_TOKEN)

@@ -36,12 +36,14 @@ def home_or_webhook():
                 price = ltp_data[f"NSE:{symbol}"]["last_price"]
                 quantity = max(1, math.floor(10000 / price))
                 order = kite.place_order(
+                    variety="regular",
                     tradingsymbol=symbol,
                     exchange="NSE",
                     transaction_type=action,
                     quantity=quantity,
                     order_type="MARKET",
-                    product="CNC"
+                    product="CNC",
+                    validity="DAY"
                 )
                 results.append({
                     "symbol": symbol,

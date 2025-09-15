@@ -22,10 +22,10 @@ def home_or_webhook():
         data = request.get_json(force=True)
         logging.info("Received POST data: %s", data)
 
-        # Parse stocks and trigger_prices as lists
+        # Parse stocks and trigger_prices as lists, normalize to uppercase
         stocks_str = data.get("stocks", "")
         prices_str = data.get("trigger_prices", "")
-        symbols = [s.strip() for s in stocks_str.split(",") if s.strip()]
+        symbols = [s.strip().upper() for s in stocks_str.split(",") if s.strip()]
         trigger_prices = [float(p.strip()) for p in prices_str.split(",") if p.strip()]
 
         if not symbols:
@@ -37,22 +37,26 @@ def home_or_webhook():
 
         try:
             holdings = kite.holdings()
-            held_symbols = {h["tradingsymbol"] for h in holdings}
+            held_symbols = {h["tradingsymbol"].strip().upper() for h in holdings}
+            positions = kite.positions()["net"]
+            position_symbols = {p["tradingsymbol"].strip().upper() for p in positions if p["quantity"] != 0}
+            all_held_symbols = held_symbols | position_symbols
             logging.info("Current holdings: %s", held_symbols)
+            logging.info("Current positions: %s", position_symbols)
         except Exception as e:
-            logging.error("Failed to fetch holdings: %s", e)
-            return jsonify({"error": "Failed to fetch holdings"}), 500
+            logging.error("Failed to fetch holdings or positions: %s", e)
+            return jsonify({"error": "Failed to fetch holdings or positions"}), 500
 
         for symbol in symbols:
-            if symbol in held_symbols:
-                msg = f"{symbol} already in holdings, skipping buy"
+            if symbol in all_held_symbols:
+                msg = f"{symbol} already in holdings or positions, skipping buy"
                 logging.info(msg)
                 results.append({"symbol": symbol, "status": msg})
                 continue
             try:
                 ltp_data = kite.ltp(f"NSE:{symbol}")
                 price = ltp_data[f"NSE:{symbol}"]["last_price"]
-                quantity = max(1, math.floor(10000 / price))
+                quantity = max(1, math.floor(1000 / price))
                 logging.info("Placing %s order for %s: qty=%d at price=%.2f", action, symbol, quantity, price)
                 order = kite.place_order(
                     variety="regular",

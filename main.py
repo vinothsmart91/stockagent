@@ -13,7 +13,7 @@ ACCESS_TOKEN = os.environ.get("KITE_ACCESS_TOKEN")
 kite = KiteConnect(api_key=API_KEY)
 kite.set_access_token(ACCESS_TOKEN)
 
-@app.route("/webhook", methods=["POST"])
+@app.route("/", methods=["POST"])
 def webhook():
     data = request.get_json(force=True)
 

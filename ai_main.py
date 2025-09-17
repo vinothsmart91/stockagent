@@ -78,6 +78,12 @@ def home_or_webhook():
         if not symbols:
             return jsonify({"error": "No stocks found in payload"}), 400
 
+        # Parse scan_name to determine sentiment
+        scan_name = data.get("scan_name", "")
+        is_bearish = "bearish" in scan_name.lower()
+        sentiment = "bearish" if is_bearish else "bullish"
+        logging.info(f"Detected sentiment from scan_name: {sentiment}")
+
         results = []
 
         try:
@@ -94,18 +100,17 @@ def home_or_webhook():
 
         for symbol in symbols:
             nse_symbol = f"NSE:{symbol}"
-            ai_action = get_ai_recommendation(nse_symbol)
-            if not ai_action:
-                msg = f"AI could not determine action for {symbol}"
-                logging.warning(msg)
-                results.append({"symbol": symbol, "status": msg})
-                continue
-
-            if ai_action == "BUY":
+            if sentiment == "bullish":
+                ai_action = get_ai_recommendation(nse_symbol)
+                if ai_action != "BUY":
+                    msg = f"AI did not recommend BUY for {symbol} in bullish scan, skipping"
+                    logging.info(msg)
+                    results.append({"symbol": symbol, "status": msg, "sentiment": sentiment, "ai_action": ai_action})
+                    continue
                 if symbol in all_held_symbols:
                     msg = f"{symbol} already in holdings or positions, skipping buy"
                     logging.info(msg)
-                    results.append({"symbol": symbol, "status": msg})
+                    results.append({"symbol": symbol, "status": msg, "sentiment": sentiment, "ai_action": ai_action})
                     continue
                 try:
                     ltp_data = kite.ltp(f"NSE:{symbol}")
@@ -115,7 +120,7 @@ def home_or_webhook():
                         variety="regular",
                         tradingsymbol=symbol,
                         exchange="NSE",
-                        transaction_type=ai_action,
+                        transaction_type="BUY",
                         quantity=quantity,
                         order_type="MARKET",
                         product="CNC",
@@ -123,13 +128,15 @@ def home_or_webhook():
                     )
                     results.append({
                         "symbol": symbol,
-                        "status": f"{ai_action} placed",
+                        "status": "BUY placed",
                         "order_id": order,
-                        "quantity": quantity
+                        "quantity": quantity,
+                        "sentiment": sentiment,
+                        "ai_action": ai_action
                     })
                 except Exception as e:
-                    results.append({"symbol": symbol, "error": str(e)})
-            elif ai_action == "SELL":
+                    results.append({"symbol": symbol, "error": str(e), "sentiment": sentiment, "ai_action": ai_action})
+            elif sentiment == "bearish":
                 available_qty = 0
                 if symbol in holdings_map:
                     available_qty += holdings_map[symbol].get("quantity", 0)
@@ -137,14 +144,15 @@ def home_or_webhook():
                     available_qty += positions_map[symbol].get("quantity", 0)
                 if available_qty <= 0:
                     msg = f"{symbol} not in holdings or positions, skipping sell"
-                    results.append({"symbol": symbol, "status": msg})
+                    logging.info(msg)
+                    results.append({"symbol": symbol, "status": msg, "sentiment": sentiment})
                     continue
                 try:
                     order = kite.place_order(
                         variety="regular",
                         tradingsymbol=symbol,
                         exchange="NSE",
-                        transaction_type=ai_action,
+                        transaction_type="SELL",
                         quantity=available_qty,
                         order_type="MARKET",
                         product="CNC",
@@ -152,12 +160,13 @@ def home_or_webhook():
                     )
                     results.append({
                         "symbol": symbol,
-                        "status": f"{ai_action} placed",
+                        "status": "SELL placed",
                         "order_id": order,
-                        "quantity": available_qty
+                        "quantity": available_qty,
+                        "sentiment": sentiment
                     })
                 except Exception as e:
-                    results.append({"symbol": symbol, "error": str(e)})
+                    results.append({"symbol": symbol, "error": str(e), "sentiment": sentiment})
 
         return jsonify(results)
 

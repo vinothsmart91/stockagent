@@ -39,6 +39,7 @@ def get_ai_recommendation(symbol):
             temperature=0
         )
         answer = response.choices[0].message.content.strip().upper()
+        logging.info(f"ChatGPT response for {symbol}: {answer}")
         if "BUY" in answer:
             return "BUY"
         elif "SELL" in answer:

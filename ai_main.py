@@ -4,6 +4,9 @@ from kiteconnect import KiteConnect
 import openai
 import os
 import math
+import time
+import traceback
+import requests
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -18,6 +21,17 @@ kite = KiteConnect(api_key=API_KEY)
 kite.set_access_token(ACCESS_TOKEN)
 openai.api_key = OPENAI_API_KEY
 
+# Log OpenAI version and API key prefix
+logging.info(f"OpenAI package version: {getattr(openai, '__version__', 'unknown')}")
+logging.info(f"OpenAI API key prefix: {OPENAI_API_KEY[:5] if OPENAI_API_KEY else 'NOT SET'}")
+
+# Check internet connectivity at startup
+try:
+    requests.get("https://api.openai.com/v1/models", timeout=5)
+    logging.info("Internet connectivity: OK (OpenAI endpoint reachable)")
+except Exception as e:
+    logging.error(f"Internet connectivity check failed: {e}")
+
 # Prompt for AI stock analysis and recommendation
 AI_PROMPT = (
     "I will give you a stock ticker symbol. Analyze it and give me a final clear recommendation: either BUY or SELL (answer must be only one word — ‘BUY’ or ‘SELL,’ no explanations or neutral choices).\n"
@@ -29,26 +43,28 @@ AI_PROMPT = (
     "The analysis is for swing trading and with a timeframe of 1-3 months."
 )
 
-def get_ai_recommendation(symbol):
+def get_ai_recommendation(symbol, retries=3, delay=2):
     prompt = f"{AI_PROMPT}\nStock: {symbol}"
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=10,
-            temperature=0
-        )
-        answer = response.choices[0].message.content.strip().upper()
-        logging.info(f"ChatGPT response for {symbol}: {answer}")
-        if "BUY" in answer:
-            return "BUY"
-        elif "SELL" in answer:
-            return "SELL"
-        else:
-            return None
-    except Exception as e:
-        logging.error("OpenAI API error for %s: %s", symbol, e)
-        return None
+    for attempt in range(retries):
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=10,
+                temperature=0
+            )
+            answer = response.choices[0].message.content.strip().upper()
+            logging.info(f"ChatGPT response for {symbol}: {answer}")
+            if "BUY" in answer:
+                return "BUY"
+            elif "SELL" in answer:
+                return "SELL"
+            else:
+                return None
+        except Exception as e:
+            logging.error("OpenAI API error for %s (attempt %d): %s\n%s", symbol, attempt + 1, e, traceback.format_exc())
+            time.sleep(delay)
+    return None
 
 @app.route("/", methods=["GET", "POST"])
 def home_or_webhook():
